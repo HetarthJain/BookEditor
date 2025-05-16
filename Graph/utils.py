@@ -38,7 +38,6 @@ def excel_to_json(file_path):
     json_data = df.to_json(orient="columns")
     return json_data
 
-
 def read_google_sheet(sheet_id):
     """
     Read a Google Sheet and convert it to JSON (needs cred.json).
@@ -58,62 +57,67 @@ def read_google_sheet(sheet_id):
             chapters.append(chapter)
         except Exception as e:
             print(f"Skipping invalid row: {row} - Error: {e}")
-    # print("chapss---------------------------\n",given_chasps)
+    # print("read_data_util:\n",chapters)
     return chapters
 
-def generate_books_with_limited_overlap(
-    chapters: List[Chapter], 
-    r: int = 3, 
-    max_docs: int = 5, 
-    min_diff: int = 1
-) -> List[List[Chapter]]:
+def generate_books_with_limited_overlap1(
+    chapters: List[Chapter], r: int = 3, max_docs: int = 3, max_overlap: int = 1
+) -> List[Book]:
     """
-    Generate k books of r chapters each, ensuring no more than 1 overlapping chapter between any pair.
+    Generate `max_docs` Book objects with `r` Chapters each,
+    ensuring no two books share more than `max_overlap` chapters.
 
     Args:
-        chapters: List of Chapter models.
-        r: Chapters per book.
-        max_docs: Number of books.
-        min_diff: minimum number of common chapters between combinations.
+        chapters: List of Chapter Pydantic objects.
+        r: Number of chapters per book.
+        max_docs: Total number of books to generate.
+        max_overlap: Maximum number of overlapping chapters allowed between any pair of books.
 
     Returns:
-        List of max_docs books (each is a list of r Chapter objects).
+        List of `Book` objects.
+
+    Raises:
+        RuntimeError: If unable to generate enough valid books under constraints.
     """
     if r > len(chapters):
         raise ValueError("r cannot be greater than the number of available chapters")
+    if max_overlap >= r:
+        raise ValueError("max_overlap must be less than r")
 
     books: List[Book] = []
     used_chapter_sets: List[Set[int]] = []
-
     chapter_indices = list(range(len(chapters)))
-    max_attempts = 10000
+
     attempts = 0
+    max_attempts = 5
 
     while len(books) < max_docs and attempts < max_attempts:
         candidate_indices = set(random.sample(chapter_indices, r))
 
-        # Check overlap constraint: max 1 overlap with any existing book
-        is_valid = all(len(candidate_indices & used) <= 1 for used in used_chapter_sets)
-
-        if is_valid:
-            books.append([chapters[i] for i in candidate_indices])
+        # Ensure overlap constraint is satisfied with all existing books
+        if all(
+            len(candidate_indices & used) <= max_overlap for used in used_chapter_sets
+        ):
+            selected_chapters = [chapters[i] for i in candidate_indices]
+            book_title = f"Book {len(books) + 1}"
+            books.append(Book(book_title=book_title, chapters=selected_chapters))
             used_chapter_sets.append(candidate_indices)
 
         attempts += 1
 
     if len(books) < max_docs:
         raise RuntimeError(
-            f"Only generated {len(books)} books with the required overlap constraint. Try reducing k or r."
+            f"Only generated {len(books)} books with the required overlap constraint. "
+            f"Try increasing the total number of chapters, decreasing r, or increasing max_overlap."
         )
-
+    # print("overlap:\n", books)
     return books
-
 
 if __name__ == "__main__":
     chapters = read_google_sheet(sheet_id=SHEET_ID)
-    print("hi----------------------------\n",chapters)
+    # print("hi----------------------------\n",chapters)
 
-    books = generate_books_with_limited_overlap(chapters, 3, 5, 1)
+    books = generate_books_with_limited_overlap1(chapters, 3, 5, 1)
     for i, book in enumerate(books):
         print(f"📘 Book {i + 1}:")
         print(book)
